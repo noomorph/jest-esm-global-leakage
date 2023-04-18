@@ -1,0 +1,14 @@
+{
+  "name": "jest-esm-global-leakage",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "NODE_NO_WARNINGS=1 NODE_OPTIONS=--experimental-vm-modules jest"
+  },
+  "dependencies": {
+    "jest": "^29.5.0"
+  },
+  "jest": {
+    "testEnvironment": "./test-environment.js"
+  }
+}
