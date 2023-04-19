@@ -1,72 +1,35 @@
-# Jest ESM Global Leakage Bug
+# Jest Global Leakage Bug
 
-This repository demonstrates a bug in Jest related to ESM modules and the leakage of unsandboxed `globalThis`.
+This repository demonstrates the leakage of global variables coming from the unsandboxed `globalThis` into the sandboxed one, held by the test environment.
 
 ## Description
 
-Imagine a situation where there is a shared module imported both by:
+To reproduce this issue, we need:
 
-* a custom environment class:
+* a custom environment class, e.g. `custom-environment.js`:
     ```js title="custom-environment.js"
-    import { TestEnvironment } from 'jest-environment-node';
-    import './shared-module.js';
-    export default TestEnvironment;
+    globalThis.__LEAKAGE__ = true;
+    module.exports = require('jest-environment-node');
     ```
-* and a test file:
-    ```js title="counter.test.js"
-    import './shared-module.js';
-
-    test(/* ... */);
+* and a test file, e.g. `leakage.test.js`:
+    ```js title="leakage.test.js"
+    it('should not leak', () => {
+        expect(globalThis.__LEAKAGE__).toBeUndefined();
+    });
     ```
 
-To demonstrate a leakage in `globalThis`, the shared module will be incrementing a counter in `globalThis` as shown below:
+For better or for worse, but such test would fail :red_circle:, due to [this commit to Jest 28.x](https://github.com/facebook/jest/commit/5247e1ff6bb13a88f95597979d938fd74c33b655).
 
-```js title="shared-module.js"
-globalThis.__COUNTER__ = (globalThis.__COUNTER__ || 0) + 1;
+However, if you swap the lines, it will pass:
+
+```js
+module.exports = require('jest-environment-node');
+globalThis.__LEAKAGE__ = true;
 ```
 
-Let's think about it for a moment. Since the test environment class and user test files receive different instances of `globalThis`[^1], this test is totally valid and normally it **passes**:
+## Question
 
-```plain text
-PASS  ./counter.test.js
-  ✓ __COUNTER__ should equal 1 (2 ms)
-```
-
-[^1]: The test file works with a sandboxed `globalThis`, while the environment module has an access to the unsandboxed `globalThis`.
-
-Now let's see what happens if we reverse `import` order as shown here:
-
-```js title="custom-environment.js"
-import './shared-module.js';
-import { TestEnvironment } from 'jest-environment-node';
-export default TestEnvironment;
-```
-
-The test begins to fail:
-
-```plain text
-FAIL  ./counter.test.js
-  ✕ __COUNTER__ should equal 1 (3 ms)
-
-  ● __COUNTER__ should equal 1
-
-    expect(received).toBe(expected) // Object.is equality
-
-    Expected: 1
-    Received: 2
-
-      2 |
-      3 | test('__COUNTER__ should equal 1', () => {
-    > 4 |     expect(globalThis.__COUNTER__).toBe(1);
-        |                                    ^
-      5 | });
-      6 |
-
-      at Object.toBe (counter.test.js:4:36)
-```
-
-Therefore, I can conclude there is a leakage of an unsandboxed `globalThis` into the context of test under certain conditions.
-This leakage has a significant negative impact on one of my projects, and I'd like it to be addressed as soon as possible.
+Is this the intended behavior? Or global variables introduced via `testEnvironment` module (or its dependencies) should not be copied to the sandboxed `this.global`?
 
 ## Steps to reproduce
 
@@ -75,39 +38,9 @@ This leakage has a significant negative impact on one of my projects, and I'd li
     ```bash
     npm install
     ```
-3. Run the test with the initial import order (the test should pass):
+3. Run the test with the initial import order (the test should fail):
     ```bash
     npm test
-    ```
-4. Change the import order in `test-environment.js` by swapping the lines:
-    ```diff
-    -import { TestEnvironment } from 'jest-environment-node';
-     import './shared-module.js';
-    +import { TestEnvironment } from 'jest-environment-node';
-     export default TestEnvironment;
-    ```
-5. Run the test again with the modified import order (the test should fail):
-    ```bash
-    npm test
-
-    # FAIL  ./counter.test.js
-    #  ✕ __COUNTER__ should equal 1 (3 ms)
-    #
-    #  ● __COUNTER__ should equal 1
-    #
-    #    expect(received).toBe(expected) // Object.is equality
-    #
-    #    Expected: 1
-    #    Received: 2
-    #
-    #      2 |
-    #      3 | test('__COUNTER__ should equal 1', () => {
-    #    > 4 |     expect(globalThis.__COUNTER__).toBe(1);
-    #        |                                    ^
-    #      5 | });
-    #      6 |
-    #
-    #      at Object.toBe (counter.test.js:4:36)
     ```
 
 ## Confirmed versions
