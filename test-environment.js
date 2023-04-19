@@ -1,3 +1,2 @@
-import { TestEnvironment } from 'jest-environment-node';
-import './shared-module.js';
-export default TestEnvironment;
+globalThis.__LEAKAGE__ = true;
+module.exports = require('jest-environment-node');
