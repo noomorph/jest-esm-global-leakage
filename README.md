@@ -4,39 +4,37 @@ This repository demonstrates a bug in Jest related to ESM modules and the leakag
 
 ## Description
 
-Imagine a situation where there is a shared module imported both by a custom environment class and a test file:
+Imagine a situation where there is a shared module imported both by:
 
-```js title="custom-environment.js"
-import { TestEnvironment } from 'jest-environment-node';
-import './shared-module.js';
-export default TestEnvironment;
-```
+* a custom environment class:
+    ```js title="custom-environment.js"
+    import { TestEnvironment } from 'jest-environment-node';
+    import './shared-module.js';
+    export default TestEnvironment;
+    ```
+* and a test file:
+    ```js title="counter.test.js"
+    import './shared-module.js';
 
-For the sake of demonstration, we'll assert that a global counter will be incremented only once:
+    test(/* ... */);
+    ```
 
-```js title="counter.test.js"
-import './shared-module.js';
-
-test('__COUNTER__ should equal 1', () => {
-    expect(globalThis.__COUNTER__).toBe(1);
-});
-```
-
-The shared module will be the one who increments that counter as shown below:
+To demonstrate a leakage in `globalThis`, the shared module will be incrementing a counter in `globalThis` as shown below:
 
 ```js title="shared-module.js"
 globalThis.__COUNTER__ = (globalThis.__COUNTER__ || 0) + 1;
 ```
 
-Since the test environment class and the test file receive different instances of `globalThis` – the test file works inside a sandboxed `globalThis`, while the environment has an access to an unsandboxed `globalThis` – this test is totally valid and normally it passes:
+Let's think about it for a moment. Since the test environment class and user test files receive different instances of `globalThis`[^1], this test is totally valid and normally it **passes**:
 
 ```plain text
 PASS  ./counter.test.js
   ✓ __COUNTER__ should equal 1 (2 ms)
 ```
 
+[^1]: The test file works with a sandboxed `globalThis`, while the environment module has an access to the unsandboxed `globalThis`.
 
-However, let's see what happens if we reverse `import` order as shown here:
+Now let's see what happens if we reverse `import` order as shown here:
 
 ```js title="custom-environment.js"
 import './shared-module.js';
@@ -67,7 +65,8 @@ FAIL  ./counter.test.js
       at Object.toBe (counter.test.js:4:36)
 ```
 
-Therefore, I conclude there is a leakage of an unsandboxed `globalThis` into the context of test under certain conditions, and it hinders my job duties.
+Therefore, I can conclude there is a leakage of an unsandboxed `globalThis` into the context of test under certain conditions.
+This leakage has a significant negative impact on one of my projects, and I'd like it to be addressed as soon as possible.
 
 ## Steps to reproduce
 
